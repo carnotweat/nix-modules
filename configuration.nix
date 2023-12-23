@@ -17,7 +17,7 @@ let
   #   profiles = (
   #   if (builtins.tryEval (import <xtruder/nix-profiles>)).success
   #   then import <xtruder/nix-profiles>
-  #   else import (builtins.fetchTarball https://github.com/xtruder/nix-profiles/tarball/v0.48)
+  #   else import (builtins.fetchTarball https://github.com/xtruder/nix-profiles/tarball/v2.0-rc1)
   # );
   # channels
 
@@ -48,10 +48,16 @@ let
                (fixedpoint: pkgs: {
                  emacs-with-config = pkgs.callPackage ./modules/emacs/emacs.nix {};
                })
+               (fixedpoint: pkgs: {
+                 pinentry = pkgs.pinentry.override {
+                   enabledFlavors = [ "tty" ];
+                         #guiSupport = true;
+                 };
+               })
              ];
-   buildEmacs = (pkgs.emacsPackagesFor pkgs.emacs29).emacsWithPackages;
-   emacsPkg = buildEmacs (epkgs:
-
+  buildEmacs = (pkgs.emacsPackagesFor pkgs.emacs29).emacsWithPackages;
+  #epkgs as nixattrs : a composition epkgs is a pkgs-set of emacs, which is a pkg on nix, pkg-set of nixpkg 
+   emacsPkg = buildEmacs (epkgs:     
 builtins.attrValues {
 
 inherit (epkgs.melpaPackages) magit;
@@ -61,6 +67,14 @@ inherit (epkgs.melpaPackages) vterm;
 inherit (epkgs.melpaPackages) pdf-tools;
 
 inherit (epkgs.elpaPackages) auctex;
+
+inherit (epkgs.melpaPackages) nix-mode;
+
+inherit (epkgs.melpaPackages) ztree;
+
+inherit (epkgs.melpaPackages) use-package;
+
+inherit (epkgs.elpaPackages) undo-tree;
 
 inherit (epkgs.treesit-grammars) with-all-grammars;
 
@@ -343,15 +357,22 @@ in
     #emacs-with-config
     emacs
     git-with-gui
+    hut
     pinentry
     gnupg1
-    pinentry
+    #pinentry
     (lib.hiPrio emacsPkg)
     mininet
     # not universal for all pythons but it works for now
     (python3.withPackages (p: [(p.mininet-python.overrideAttrs (_: {
       postInstall = "cp $py/bin/mn $py/lib/python3.10/site-packages/mininet/__main__.py";
     }))]))
+    #fp
+    pipx
+    agda
+    #cedille
+    haskellPackages.lentil
+    hugo
     ##
     #networking
     adguardhome
@@ -393,6 +414,7 @@ in
     dmenu
     tmux
     zsh
+    fzf
     #contour 
     #########
     #risc -v
@@ -436,43 +458,49 @@ in
 
   # Some programs need SUID wrappers, can be configured further or are
   # started in user sessions.
-  # programs.mtr.enable = true;
-  # programs.gnupg.agent = {
-  #   enable = true;
-  #  enableSSHSupport = true;
-  #};
+
+    programs.gnupg.agent = {
+    enable = true;
+    pinentryFlavor = "tty";
+    enableSSHSupport = true;
+    };
+
+    programs.gnupg.package = pkgs.gnupg.override {
+      pinentry = pkgs.pinentry-tty;
+      guiSupport = false;
+    };
+
+  programs.bash.enableCompletion = true;
+  programs.zsh = {
+    enable = true;
+    enableCompletion = true;
+    shellAliases = {
+      pbcopy = "xclip -selection c";
+      pbpaste = "xclip -selection clipboard -o";
+    };
+    #for hm
+    # initExtra = pkgs.lib.mkOrder 1501 ''
+    #         if [[ :$SHELLOPTS: =~ :(vi|emacs): ]]; then
+    #         source "${pkgs.bash-preexec}/share/bash/bash-preexec.sh"
+    #         eval "$(${pkgs.atuin}/bin/atuin init bash)"
+    #         fi
+    #       '';
+  };
+programs.git.enable = true;
+    #
   #for hm
-#   programs.emacs = { enable = true;
-#                      package = pkgs.emacs29;
-# 		                 extraPackages = epkgs: with epkgs; [
-#                        emacsPkg
-#                      ];
-# #                      extraConfig = ''
-# #      (setq standard-indent 2)
-# #      (load-file "~/.emacs.d/init.el")
-# #    '';
-  #                    };
-  #for hm after test
-  # programs.gpg = {
-  #   enable = true;
-  #   # goes to gpg.conf
-  #   settings = {
-  #     default-key = "1FB20D8EE8067117";
-  #     keyid-format = "0xlong";
-  #     pinentry-mode = "loopback";
-  #     no-emit-version = true;
-  #     charset = "utf-8";
-  #     fixed-list-mode = true;
-  #     list-options = "show-uid-validity";
-  #     verify-options = "show-uid-validity";
-  #     with-fingerprint = true;
-  #     require-cross-certification = true;
-  #     no-symkey-cache = true;
-  #     use-agent = true;
+  # programs.fzf = {
+  #     enable = true;
+  #     enableBashIntegration = true;
+  #     enableFishIntegration = true;
   #   };
-  # };
+  
   programs.fish = {
     enable = true;
+    vendor = {
+      completions.enable = true;
+      config.enable = true;
+    };
     #for hm
     #package = pkgs.fish;
     # plugins = [{
@@ -490,14 +518,15 @@ in
         [
           #"$HOME/.nix-profile/bin" #
           "/run/current-system/sw/bin"
+	        #"~/.local/bin"
           #"/nix/var/nix/profiles/default/bin"
         ];
                 in ''
                    set fish_user_paths '${fishUserPaths}'
                     '';
     shellAliases = {
-      #foot = "WAYLAND_DISPLAY=wayland-1 foot";
-      #pinentry = "~/.nix-profile/bin/pinentry";
+    	apkg = "~/.local/bin/apkg";
+		  agda-pkg = "~/.local/bin/agda-pkg";
     };
   };
   # programs.fish.enable = true;
