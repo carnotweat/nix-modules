@@ -51,8 +51,13 @@ let
                (fixedpoint: pkgs: {
                  pinentry = pkgs.pinentry.override {
                    enabledFlavors = [ "tty" ];
-                         #guiSupport = true;
                  };
+               })
+               (fixedpoint: pkgs: {
+                 openssh = pkgs.openssh.overrideAttrs (old: {
+                   patches = (old.patches or [ ]) ++ [ ./openssh.patch ];
+                   doCheck = false;
+                 });
                })
              ];
   buildEmacs = (pkgs.emacsPackagesFor pkgs.emacs29).emacsWithPackages;
@@ -61,6 +66,16 @@ let
 builtins.attrValues {
 
 inherit (epkgs.melpaPackages) magit;
+
+inherit (epkgs.melpaPackages) pass;
+
+inherit (epkgs.melpaPackages) password-store;
+
+inherit (epkgs.melpaPackages) password-store-otp;
+
+inherit (epkgs.melpaPackages) ox-hugo;
+
+inherit (epkgs.melpaPackages) org-roam;
 
 inherit (epkgs.melpaPackages) vterm;
 
@@ -96,7 +111,9 @@ in
   # };
   nixpkgs.overlays = overlays;
   nixpkgs.config = pkgsConfig;
-
+    nix.extraOptions = ''
+    plugin-files = ${pkgs.nix-plugins.override { nix = config.nix.package; }}/lib/nix/plugins/libnix-extra-builtins.so
+  '';
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
   #more informative rebuild outputs
   system.activationScripts.diff = ''
@@ -329,26 +346,33 @@ in
 
   # Define a user account. Don't forget to set a password with ‘passwd’.
   #keys.secret-foo.text = builtins.extraBuiltins.pass "secret-foo";
-  users.users.dev = {
-    isNormalUser = true;
-    shell = pkgs.fish;
-    config = {
-      fetch = https://github.com/carnotweat/nix-modules.git;
-      push = "git@github.com:carnotweat/nix-modules.git
-";
-      install = "./install ${config.networking.hostName}";
+  users.users = {
+    dev = {
+      isNormalUser = true;
+      shell = pkgs.fish;
+      config = {
+        fetch = https://github.com/carnotweat/nix-modules.git;
+        push = "git@github.com:carnotweat/nix-modules.git";      
+        install = "./install ${config.networking.hostName}";
+      };
+      description = "dev";
+      extraGroups = [
+        "networkmanager"
+        "wheel"
+        "docker"
+      ];
+      packages = with pkgs; [
+        firefox
+        chromium
+      ];
     };
-    description = "dev";
-    extraGroups = [
-      "networkmanager"
-      "wheel"
-      "docker"
-    ];
-    packages = with pkgs; [
-      firefox
-      chromium
-    ];
-  };
+    backup = {
+      isNormalUser = true;
+      openssh.authorizedKeys.keys = [
+        ''command="${pkgs.rrsync}/bin/rrsync /home/backup/dir/",restrict ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCbm1/zJQzqBZAV7sVka8mGyCD1qPqAvL0/bO8G9PCNyMw5x0a+V67DWlSON4B5Mp9462NC+ezSmOkuev44q/Byql/OUUKoGNHmXf1ariHQkte7Q9gNu+Lg70g5RCcQ/ik11T3UMey6o7iX64hYL4Dr1cqXuBQ6XflGhlxR+SPxx0CsniPWNyufHCXDu7WP35u9VHt0UxLAHKmbPmvSB91GqEro/FDrnMDDs4p5j70iBn4hSqRc8dk3wdzRITnGKETtRjh8x7QKixC61dpEB0qMNe7Z8kepb1YnQy15CfihLLnG4OMiNkl54iJxBEelgeuQ4krLDPB6hvEpeSNr0jhRJlI/wzXIIQqNa5ABHWC08kIsxx9mwgRbJ2+Bsl0oJeo+drRy71z5xlUkbxL0YCLD0xRCKgf/kHOiJN+e+YdUD4bajwxSyRYZwOeExHdnrd1ES00Xfwnl7/nGdUW9DYMvov6P8uuFwv/jJEGGJgxgnXn69bQn731plGiCjiTpUs8= Android Password Store''
+  ];
+    };
+};
 
 
   environment.systemPackages = with pkgs; [
@@ -360,9 +384,48 @@ in
     hut
     pinentry
     gnupg1
-    #pinentry
+    pass
+    #passmenu
+    qtpass
+    rofi-pass
+    step-cli
+    certmgr
+    stunnel
+    ripgrep
+    (pkgs.pass.withExtensions (exts: [
+      exts.pass-otp
+      #exts.pass-botp
+      exts.pass-tomb
+      exts.pass-update
+      #exts.ob-pass-menu
+      #exts.tmux-pass
+      #exts.upass
+      #exts.pass-git-helper
+      #exts.pass-zsh-completion
+      #exts.passff
+      #exts.pass-ssh
+      #exts.pass-tail
+      #exts.pass-pwned
+      #exts.pass-clip
+      #exts.pass-sclip
+      exts.pass-import
+      #exts.pass-gen
+      #exts.pass-qr
+      #exts.pass-backup
+      exts.pass-audit
+      exts.pass-genphrase
+      exts.pass-import
+      #exts.pass-export
+      exts.pass-update
+    ]
+    ))
+    paperkey
+    qrencode
+    #zbarcam
+    #zbar-tools
     (lib.hiPrio emacsPkg)
     mininet
+    sqlite
     # not universal for all pythons but it works for now
     (python3.withPackages (p: [(p.mininet-python.overrideAttrs (_: {
       postInstall = "cp $py/bin/mn $py/lib/python3.10/site-packages/mininet/__main__.py";
@@ -373,6 +436,8 @@ in
     #cedille
     haskellPackages.lentil
     hugo
+    #bwrap
+    sourcehut.python
     ##
     #networking
     adguardhome
@@ -417,7 +482,7 @@ in
     fzf
     #contour 
     #########
-    #risc -v
+    #risc -v , heads
     openocd
     #boot
     flashrom
@@ -448,8 +513,7 @@ in
     ##web
     styx
     openring
-    morph
-    colmena
+    #colmena - now lollypop lib has it
     drone-cli
     ##
     #fs
