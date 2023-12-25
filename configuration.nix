@@ -13,6 +13,7 @@ let
   pkgsConfig = {
     allowUnfree = true;
   };
+  pkgsUnstable = import <nixpkgs-unstable> {};
   # profiles
   #   profiles = (
   #   if (builtins.tryEval (import <xtruder/nix-profiles>)).success
@@ -35,8 +36,9 @@ let
   };
 
   upgradesOverlay = fixedpoint: pkgs: {
-    #dropbox = pkgs.pkgsUnstable.dropbox;
-    #jbake = pkgs.pkgsUnstable.jbake;
+    #typst = pkgs.pkgsUnstable.typst;
+    #tree-sitter = pkgs.pkgsUnstable.tree-sitter;
+    #typst-lsp = pkgs.pkgsUnstable.typst-lsp;
   };
 
   overlays = [ packageSetsOverlay
@@ -67,6 +69,8 @@ builtins.attrValues {
 
 inherit (epkgs.melpaPackages) magit;
 
+inherit (epkgs.melpaPackages) markdown-mode;
+
 inherit (epkgs.melpaPackages) pass;
 
 inherit (epkgs.melpaPackages) password-store;
@@ -91,7 +95,7 @@ inherit (epkgs.melpaPackages) use-package;
 
 inherit (epkgs.elpaPackages) undo-tree;
 
-inherit (epkgs.treesit-grammars) with-all-grammars;
+inherit (epkgs.treesit-grammars) with-all-grammars; 
 
 });
 
@@ -109,12 +113,19 @@ in
 # overlayFoo = self: super: super.lib.fixedPoints.applyOnce "foo" {
 #   # like verifying that a property/predicate holds with types
   # };
+  nix.optimise.automatic = true;
   nixpkgs.overlays = overlays;
   nixpkgs.config = pkgsConfig;
-    nix.extraOptions = ''
+  nix.nixPath = [
+    "nixpkgs=23.05"
+    "nixos-config=/etc/nixos/configuration.nix"
+    "/nix/var/nix/profiles/per-user/root/channels"
+  ];
+  nix.extraOptions = ''
     plugin-files = ${pkgs.nix-plugins.override { nix = config.nix.package; }}/lib/nix/plugins/libnix-extra-builtins.so
   '';
-  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+    nix.settings.experimental-features = [ "nix-command" "flakes" ];
+    system.autoUpgrade.channel = "https://nixos.org/channels/nixos-23.05-small/";
   #more informative rebuild outputs
   system.activationScripts.diff = ''
     if [[ -e /run/current-system ]]; then
@@ -380,6 +391,12 @@ in
     #overrides
     #emacs-with-config
     emacs
+    typst
+    typst-lsp
+    tree-sitter
+    texlive.combined.scheme-small
+    multimarkdown
+    sqlite
     git-with-gui
     hut
     pinentry
@@ -425,7 +442,6 @@ in
     #zbar-tools
     (lib.hiPrio emacsPkg)
     mininet
-    sqlite
     # not universal for all pythons but it works for now
     (python3.withPackages (p: [(p.mininet-python.overrideAttrs (_: {
       postInstall = "cp $py/bin/mn $py/lib/python3.10/site-packages/mininet/__main__.py";
