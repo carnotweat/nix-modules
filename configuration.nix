@@ -69,6 +69,24 @@ builtins.attrValues {
 
 inherit (epkgs.melpaPackages) magit;
 
+#inherit (epkgs.melpaPackages) emacs-async;
+
+inherit (epkgs.melpaPackages) projectile;
+
+inherit (epkgs.melpaPackages) helm;
+
+inherit (epkgs.elpaPackages) ivy;
+
+inherit (epkgs.melpaPackages) cider;
+
+inherit (epkgs.melpaPackages) haskell-mode;
+
+inherit (epkgs.melpaPackages) flycheck-haskell;
+
+inherit (epkgs.melpaPackages) org-projectile;
+
+inherit (epkgs.melpaPackages) counsel;
+
 inherit (epkgs.melpaPackages) markdown-mode;
 
 inherit (epkgs.melpaPackages) pass;
@@ -429,7 +447,7 @@ in
       #exts.pass-gen
       #exts.pass-qr
       #exts.pass-backup
-      exts.pass-audit
+      #exts.pass-audit
       exts.pass-genphrase
       exts.pass-import
       #exts.pass-export
@@ -511,7 +529,10 @@ in
     gcc
     zig
     niv
+    #ocaml
     opam
+    ocaml
+    ocamlPackages.utop
     #m4
     #bison
     #flex
