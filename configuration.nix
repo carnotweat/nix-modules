@@ -124,6 +124,8 @@ in
       ./hardware-configuration.nix
       ./cachix.nix
       ./home-config.nix
+      #unless automated boot
+      ~/.config/modules
       #profiles.profiles
     ];
   #disabledModules = [ "services/misc/cgit.nix" ];
@@ -142,8 +144,9 @@ in
   nix.extraOptions = ''
     plugin-files = ${pkgs.nix-plugins.override { nix = config.nix.package; }}/lib/nix/plugins/libnix-extra-builtins.so
   '';
-    nix.settings.experimental-features = [ "nix-command" "flakes" ];
-    system.autoUpgrade.channel = "https://nixos.org/channels/nixos-23.05-small/";
+  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+    # builds everything from updated source only if needed
+    #system.autoUpgrade.channel = "https://nixos.org/channels/nixos-23.05-small/";
   #more informative rebuild outputs
   system.activationScripts.diff = ''
     if [[ -e /run/current-system ]]; then
@@ -403,7 +406,7 @@ in
     };
 };
 
-
+#options
   environment.systemPackages = with pkgs; [
     cmake
     #overrides
@@ -444,6 +447,7 @@ in
       #exts.pass-clip
       #exts.pass-sclip
       exts.pass-import
+      # pass audit is broken beyond hope 
       #exts.pass-gen
       #exts.pass-qr
       #exts.pass-backup
@@ -556,7 +560,10 @@ in
     #fs
     bindfs
   ];
-
+  # if config.services.xserver.enable then with pkgs; [
+  # ]
+# else
+#       [ vim ];
   # Some programs need SUID wrappers, can be configured further or are
   # started in user sessions.
 
