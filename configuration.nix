@@ -10,6 +10,11 @@
 let
   ntpF = (idx: "${idx}.amazon.pool.ntp.org");
   lan_mac = "ac:15:a2:ee:66:f4";
+  # generate via openvpn --genkey --secret openvpn-laptop.key
+  # client-key = "/root/openvpn-laptop.key";
+  # domain = "vpn.localhost.localdomain";
+  # vpn-dev = "tun0";
+  # port = 1194;
   pkgsConfig = {
     allowUnfree = true;
   };
@@ -75,6 +80,8 @@ inherit (epkgs.melpaPackages) projectile;
 
 inherit (epkgs.melpaPackages) helm;
 
+inherit (epkgs.melpaPackages) aria2;
+
 inherit (epkgs.elpaPackages) ivy;
 
 inherit (epkgs.melpaPackages) cider;
@@ -125,7 +132,7 @@ in
       ./cachix.nix
       ./home-config.nix
       #unless automated boot
-      ~/.config/modules
+      #~/.config/modules
       #profiles.profiles
     ];
   #disabledModules = [ "services/misc/cgit.nix" ];
@@ -133,7 +140,11 @@ in
 # overlayFoo = self: super: super.lib.fixedPoints.applyOnce "foo" {
 #   # like verifying that a property/predicate holds with types
   # };
-  nix.optimise.automatic = true;
+  nix.gc.automatic = true;
+  nix.gc.dates = "19:00";
+  nix.gc.persistent = true;
+  nix.gc.options = "--delete-older-than 60d";
+  #nix.optimise.automatic = true;
   nixpkgs.overlays = overlays;
   nixpkgs.config = pkgsConfig;
   nix.nixPath = [
@@ -146,7 +157,16 @@ in
   '';
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
     # builds everything from updated source only if needed
-    #system.autoUpgrade.channel = "https://nixos.org/channels/nixos-23.05-small/";
+  #system.autoUpgrade.channel = "https://nixos.org/channels/nixos-23.05-small/";
+  #   system.activationScripts.openvpn-addkey = ''
+  #   f="/etc/openvpn/smartphone-client.ovpn"
+  #   if ! grep -q '<secret>' $f; then
+  #     echo "appending secret key"
+  #     echo "<secret>" >> $f
+  #     cat ${client-key} >> $f
+  #     echo "</secret>" >> $f
+  #   fi
+  # '';
   #more informative rebuild outputs
   system.activationScripts.diff = ''
     if [[ -e /run/current-system ]]; then
@@ -170,13 +190,16 @@ in
   # Bootloader.
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
+  boot.cleanTmpDir = true;
   # for router and ip failover
   boot.kernel.sysctl."net.ipv4.ip_forward" = "1";
   #  boot.kernel.sysctl."net.ipv6.conf.all.forwarding" = "1";
   #boot.kernelPackages = pkgs.linuxPackages_mptcp;
   #boot.supportedFilesystems = [ "bcachefs" ];
-
-  boot.kernelModules = [ "veth" ];
+  boot.kernel.sysctl = {
+      "vm.dirty_ratio" = 6;
+  };
+  
   boot.kernel.sysctl = {
     "net.ipv4.conf.all.forwarding" = true;
     "net.ipv6.conf.all.forwarding" = true;
@@ -185,12 +208,92 @@ in
     "net.ipv4.conf.wan0.rp_filter" = 1;
     "net.ipv4.conf.wlan0.rp_filter" = 1;
   };
+  # Security Settings from secure profile in nixos repo
+  boot.kernelPackages = pkgs.linuxPackages_hardened;
 
+  # environment.memoryAllocator.provider = "scudo";
+  # environment.variables.SCUDO_OPTIONS = "ZeroContents=1";
+
+  #security.hideProcessInformation = true;
+  security.lockKernelModules = true;
+  security.protectKernelImage = true;
+  security.allowSimultaneousMultithreading = false;
+  security.forcePageTableIsolation = true;
+  security.virtualisation.flushL1DataCache = "always";
+  security.apparmor.enable = true;
+  boot.kernelParams = [
+    # Slab/slub sanity checks, redzoning, and poisoning
+    "slub_debug=FZP"
+
+    # Overwrite free'd memory
+    "page_poison=1"
+
+    # Enable page allocator randomization
+    "page_alloc.shuffle=1"
+  ];
+  boot.kernelModules = [
+    "sch_netem"
+    "sch_cake"
+    "veth"
+  ];
+  boot.blacklistedKernelModules = [
+    # Obscure network protocols
+    "ax25"
+    "netrom"
+    "rose"
+
+    # Old or rare or insufficiently audited filesystems
+    "adfs"
+    "affs"
+    "bfs"
+    "befs"
+    "cramfs"
+    "efs"
+    "erofs"
+    "exofs"
+    "freevxfs"
+    "f2fs"
+    "hfs"
+    "hpfs"
+    "jfs"
+    "minix"
+    "nilfs2"
+    "qnx4"
+    "qnx6"
+    "sysv"
+    "ufs"
+  ];
+  # Restrict ptrace() usage to processes with a pre-defined relationship
+  # (e.g., parent/child)
+  boot.kernel.sysctl."kernel.yama.ptrace_scope" = "1";
+
+  # Hide kptrs even for processes with CAP_SYSLOG
+  boot.kernel.sysctl."kernel.kptr_restrict" = "2";
+
+  # Disable bpf() JIT (to eliminate spray attacks)
+  boot.kernel.sysctl."net.core.bpf_jit_enable" = false;
+
+  # Disable ftrace debugging
+  boot.kernel.sysctl."kernel.ftrace_enabled" = false;
+
+  # Enable strict reverse path filtering (that is, do not attempt to route
+  # packets that "obviously" do not belong to the iface's network; dropped
+  # packets are logged as martians).
+  boot.kernel.sysctl."net.ipv4.conf.all.log_martians" = true;
+  boot.kernel.sysctl."net.ipv4.conf.all.rp_filter" = "1";
+  boot.kernel.sysctl."net.ipv4.conf.default.log_martians" = true;
+
+  # Ignore broadcast ICMP (mitigate SMURF)
+  boot.kernel.sysctl."net.ipv4.icmp_echo_ignore_broadcasts" = true;
   #boot.kernelParams = ["ipv6.disable=0"];
   networking.hostName = "nixos"; # Define your hostname.
   # networking.wireless.enable = true;  # Enables wireless support via wpa_supplicant.
 
-
+  networking.nat = {
+    enable = true;
+    #externalInterface = <your-server-out-if>;
+    #internalInterfaces  = [ vpn-dev ];
+  };
   #wireguard-tools
   # networking.nftables = {
   #   enable = true;
@@ -295,18 +398,32 @@ in
     xkbVariant = "";
     #xkbVariant = "dvp";
   };
-
+# hardware.printers = {
+#   ensurePrinters = [
+#     {
+#       name = "Dell";
+#       location = "Home";
+#       deviceUri = "usb://Canon/TS300%20series?serial=428D72
+# ";
+#       #model = "Dell-1250c.ppd.gz";
+#       # ppdOptions = {
+#       #   PageSize = "A4";
+#       # };
+#     }
+#   ];
+# };
   # Enable CUPS to print documents.
   #services.printing.enable = true;
   services.printing = {
     enable = true;
+    #drivers = [ TS300 ];
     allowFrom = [ "localhost"  ];
     browsing = true;
     clientConf = ''
-    ServerName router.local
+   # ServerName router.local
   '';
     defaultShared = true;
-    #drivers = [ pkgs.hplip ];
+    drivers = [ pkgs.cnijfilter2 ];
     # start on boot, not on socket activation
     startWhenNeeded = false;
   };
@@ -402,9 +519,26 @@ in
       isNormalUser = true;
       openssh.authorizedKeys.keys = [
         ''command="${pkgs.rrsync}/bin/rrsync /home/backup/dir/",restrict ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCbm1/zJQzqBZAV7sVka8mGyCD1qPqAvL0/bO8G9PCNyMw5x0a+V67DWlSON4B5Mp9462NC+ezSmOkuev44q/Byql/OUUKoGNHmXf1ariHQkte7Q9gNu+Lg70g5RCcQ/ik11T3UMey6o7iX64hYL4Dr1cqXuBQ6XflGhlxR+SPxx0CsniPWNyufHCXDu7WP35u9VHt0UxLAHKmbPmvSB91GqEro/FDrnMDDs4p5j70iBn4hSqRc8dk3wdzRITnGKETtRjh8x7QKixC61dpEB0qMNe7Z8kepb1YnQy15CfihLLnG4OMiNkl54iJxBEelgeuQ4krLDPB6hvEpeSNr0jhRJlI/wzXIIQqNa5ABHWC08kIsxx9mwgRbJ2+Bsl0oJeo+drRy71z5xlUkbxL0YCLD0xRCKgf/kHOiJN+e+YdUD4bajwxSyRYZwOeExHdnrd1ES00Xfwnl7/nGdUW9DYMvov6P8uuFwv/jJEGGJgxgnXn69bQn731plGiCjiTpUs8= Android Password Store''
-  ];
+      ];
+      shell = pkgs.fish;
+      #packages = with pkgs; [  ];
     };
-};
+    aria = {
+      isNormalUser = true;
+            openssh.authorizedKeys.keys = [
+        ''command="${pkgs.rrsync}/bin/rrsync /home/backup/dir/",restrict ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCbm1/zJQzqBZAV7sVka8mGyCD1qPqAvL0/bO8G9PCNyMw5x0a+V67DWlSON4B5Mp9462NC+ezSmOkuev44q/Byql/OUUKoGNHmXf1ariHQkte7Q9gNu+Lg70g5RCcQ/ik11T3UMey6o7iX64hYL4Dr1cqXuBQ6XflGhlxR+SPxx0CsniPWNyufHCXDu7WP35u9VHt0UxLAHKmbPmvSB91GqEro/FDrnMDDs4p5j70iBn4hSqRc8dk3wdzRITnGKETtRjh8x7QKixC61dpEB0qMNe7Z8kepb1YnQy15CfihLLnG4OMiNkl54iJxBEelgeuQ4krLDPB6hvEpeSNr0jhRJlI/wzXIIQqNa5ABHWC08kIsxx9mwgRbJ2+Bsl0oJeo+drRy71z5xlUkbxL0YCLD0xRCKgf/kHOiJN+e+YdUD4bajwxSyRYZwOeExHdnrd1ES00Xfwnl7/nGdUW9DYMvov6P8uuFwv/jJEGGJgxgnXn69bQn731plGiCjiTpUs8= Android Password Store''
+  ];
+      shell = pkgs.fish;
+      packages = with pkgs; [
+        aria2
+        lftp
+        gost
+        gauche
+        stun
+        rc
+      ];
+    };
+  };
 
 #options
   environment.systemPackages = with pkgs; [
@@ -419,6 +553,8 @@ in
     multimarkdown
     sqlite
     git-with-gui
+    #git workflows
+    gitflow
     hut
     pinentry
     gnupg1
@@ -496,6 +632,10 @@ in
     iptables
     wireguard-tools
     clamav
+    openvpn
+    hostapd
+    dnsmasq
+    bridge-utils 
     ##
     #nix
     cachix
@@ -518,10 +658,17 @@ in
     tmux
     zsh
     fzf
+    kakoune
+    restic
     #contour 
     #########
     #risc -v , heads
     openocd
+    #printer driver
+    cnijfilter2
+    #torrents
+    #aria
+
     #boot
     flashrom
     efibootmgr
@@ -566,7 +713,8 @@ in
 #       [ vim ];
   # Some programs need SUID wrappers, can be configured further or are
   # started in user sessions.
-
+  
+  
     programs.gnupg.agent = {
     enable = true;
     pinentryFlavor = "tty";
@@ -577,6 +725,13 @@ in
       pinentry = pkgs.pinentry-tty;
       guiSupport = false;
     };
+    programs.firejail.wrappedBinaries = {
+      firefox = {
+        executable = "${pkgs.lib.getBin pkgs.firefox}/bin/firefox";
+        profile = "${pkgs.firejail}/etc/firejail/firefox.profile";
+      };
+    };
+
 
   programs.bash.enableCompletion = true;
   programs.zsh = {
@@ -688,11 +843,7 @@ programs.git.enable = true;
     updater.enable = true;
   };
   services.tailscale.enable = true;
-  networking.firewall = {
-    checkReversePath = "loose";
-    trustedInterfaces = [ "tailscale0" ];
-    allowedUDPPorts = [ config.services.tailscale.port ];
-  };
+
   services.powerdns.enable = true;
   services.gitea = {
     enable = true;
@@ -952,13 +1103,33 @@ ${iproute2}/bin/ip rule add fwmark 2 table vpn_table
 #         }
 #   }
 #   EOF
-# '';
+  # '';
+    environment.etc."openvpn/smartphone-client.ovpn" = {
+    text = ''
+      dev tun
+      ifconfig 10.8.0.2 10.8.0.1
+      redirect-gateway def1
+      cipher AES-256-CBC
+      auth-nocache
+      comp-lzo
+      keepalive 10 60
+      resolv-retry infinite
+      nobind
+      persist-key
+      persist-tun
+      secret [inline]
 
+    '';
+    mode = "600";
+  };
+  # no /bin/route
+  #envitromnet.etc."openvpn/script_up.sh".source = ../script_up.sh;
+  environment.etc."hostname.tun0".source = ../hostname.tun0;
   environment.etc."coredns/blocklist.hosts".source = ../blocklist.hosts;
   services.avahi = {
     enable = true;
-    hostName = "router";
-    interfaces = [ "lan0" "wlan0" ];
+    #hostName = "router";
+    interfaces = [ "eno1" ];
     publish = {
       enable = true;
       addresses = true;
@@ -1156,6 +1327,32 @@ ${iproute2}/bin/ip rule add fwmark 2 table vpn_table
   #     nameValuePair "${service}.${domain}" { }
   #   )
   networking = {
+    firewall = {
+      enable = true;
+          checkReversePath = "loose";
+          trustedInterfaces =  [ "tailscale0" ];
+          allowedTCPPorts = [ 80 443 22 53 ];
+          allowedUDPPorts = [ config.services.tailscale.port ];
+    
+      extraCommands = "
+      iptables -A OUTPUT -o lo -m owner --uid-owner 1002 -j ACCEPT
+      iptables -A OUTPUT -o tun0 -m owner --uid-owner 1002 -j ACCEPT
+      iptables -A OUTPUT -m owner --uid-owner 1002 -j REJECT
+  ";
+    };
+    wireguard.interfaces = {
+      wg0 = {
+              ips = [ "192.168.5.1/24" ];
+              listenPort = 1234;
+              privateKeyFile = "/root/wg-private";
+              peers = [
+              { # server
+               publicKey = "MY PUB KEY";
+               endpoint = "SERVER:PORT";
+               allowedIPs = [ "192.168.5.0/24" ];
+              }];
+      };
+    };
     nameservers = [ "127.0.0.1" "::1" ];
     #nftables.enable = true;
     #nftables.rulesetFile = "/etc/nixos/nftables.conf";
@@ -1168,10 +1365,11 @@ ${iproute2}/bin/ip rule add fwmark 2 table vpn_table
       #dns = "none";
     };
   };
+
   #   networking.resolvconf.extraConfig = ''
   #   name_servers="10.10.10.1 fd01::1"
   # '';
-  networking.firewall.allowedTCPPorts = [ 80 443 22 53 ];
+  #networking.firewall.
   #networking.firewall.allowedUDPPorts = [ 53 ];
   services.openssh = {
     enable = true;
@@ -1186,6 +1384,25 @@ ${iproute2}/bin/ip rule add fwmark 2 table vpn_table
     #  HostbasedAuthentication yes
     #''
   };
+    services.openvpn.servers = {
+    #officeVPN  = { config = '' config /root/nixos/openvpn/officeVPN.conf ''; };
+    #homeVPN    = { config = '' config /root/nixos/openvpn/homeVPN.conf ''; };
+    #serverVPN  = { config = '' config /root/nixos/openvpn/serverVPN.conf ''; };
+    };
+    services.openvpn.servers.smartphone.config = ''
+# define vpn-dev, enable udp port with that name too
+    proto udp
+    ifconfig 10.8.0.1 10.8.0.2
+#client-key/port
+    cipher AES-256-CBC
+    auth-nocache
+
+    comp-lzo
+    keepalive 10 60
+    ping-timer-rem
+    persist-tun
+    persist-key
+  '';
 
   # add acme upon domain spec
   # This value determines the NixOS release from which the default
